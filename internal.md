@@ -6,12 +6,12 @@ Incremental Computing aim to speed up computation by reusing previous results.
 Due to its prevalency in computing, Incremental Computation had been applied to various domain, such as Build System, Database, Compiler, Web Browsers.
 
 ## Memoization
-The most classic method to incrementalize a program is memoization. To memoize a function, one extend the function with an auxilary data structure (typically a hashmap), which pair inputs of the function with its output. On repeated invoation, this memo-table can skip the actual execution and return the recorded output directly.
+The most classic method to incrementalize a program is memoization. To memoize a function, one extend the function with an auxiliary data structure (typically a hashmap), which pair inputs of the function with its output. On repeated invocation, this memo-table can skip the actual execution and return the recorded output directly.
 
 The key issue with memoization is that it is too coarse grained. The key problem with memoization is spine-traversal. For example, supposed `map f xs`, including all recursive call is memoized. `map f (xs ++ [x])`, however, cannot reuse any previous result, and must recompute from scratch. 
 
 ## Insight
-To fix this, memoization should not be applied on the whole value. Instead, memoization split the input `A`, which is an CEK machine, into two part: the memoized fragment, `F[]` an CEK machine with open term `FVS`, and the carry-on fragment `XS`, a enviroment binding the open terms. The memoized fragment is lookuped and matched in a data structure. The resulting value in the memoization table is thus a term `B' = G[FVS]` reachable from `A' = F[FVS]` (`A' ->* B'`). Memoization then allow skipping in the form of `A = F[XS] ->* G[XS] -> B` for arbitary `XS`.
+To fix this, memoization should not be applied on the whole value. Instead, memoization split the input `A`, which is an CEK machine, into two part: the memoized fragment, `F[]` an CEK machine with open term `FVS`, and the carry-on fragment `XS`, a enviroment binding the open terms. The memoized fragment is looked-up and matched in a data structure. The resulting value in the memoization table is thus a term `B' = G[FVS]` reachable from `A' = F[FVS]` (`A' ->* B'`). Memoization then allow skipping in the form of `A = F[XS] ->* G[XS] -> B` for arbitrary `XS`.
 
 As an example, from a bird eye view, we should be memoizing `map f (xs ++ [_0])` to `map f xs ++ map f _0` - in other word, memoizing a prefix of the input list, so the result is usable on a right-extended list. (A left-extended list is already handled by classic memoization).
 
@@ -20,11 +20,13 @@ To sum up, to use a `F[XS] ->* G[XS]` entry to skip computation, we have to:
 - check equality between `F` and `A`
 - subst `BS` into `G[XS]` to create the final term `Y = G[BS]` such that `X = A[BS] ->* G[BS] = Y`
 
-- X    -split>   F[XS]
-- |                |
-- |                |
-- v                v
-- Y    <subst-   G[XS]
+```
+X    -split>   F[XS]
+|                |
+|                |
+v                v
+Y    <subst-   G[XS]
+```
 
 Note that there are two class of concepts, the term/enviroment/substitution that operate in object level, and one that operate in the meta level, operating over the whole CEK machine. The former is in lower case while the latter is in upper case.
 
@@ -67,7 +69,7 @@ Note that there are two class of concepts, the term/enviroment/substitution that
 ## Updating Memo
 - Execute 3 steps in cycle to ensure progress in CEK and improvement in memo tree
 - Lookup the corresponding CEK/splitting/node by climbing the tree
-- Improve the lookuped CEK by skipping/stepping(if skipping failed)
+- Improve the looked-up CEK by skipping/stepping(if skipping failed)
 - Use the commuting square to jump forward the main CEK
 - `X -> F[XS] -> G[XS] -> H[XS]`
 - "split    "
