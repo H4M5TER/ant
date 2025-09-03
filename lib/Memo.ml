@@ -22,7 +22,7 @@ open State
 
 let ( % ) f g x = f (g x)
 let ( $ ) f x = f x
-let log x = print_endline x
+let log x = Stdio.print_endline x
 let log x = ignore x
 
 (* todo: when the full suffix is fetched, try to extend at front. *)
@@ -31,10 +31,10 @@ and words = seq
 (* Just have Word.t. We could make Word a finger tree of Word.t but that would cost lots of conversion between two representation. *)
 
 let source_to_string (src : source) =
-  match src with E i -> "E" ^ string_of_int i | S i -> "S" ^ string_of_int i | K -> "K"
+  match src with E i -> "E" ^ Int.to_string i | S i -> "S" ^ Int.to_string i | K -> "K"
 
 let request_to_string (req : fetch_request) =
-  "at " ^ source_to_string req.src ^ "+" ^ string_of_int req.offset ^ ", " ^ string_of_int req.word_count ^ " words"
+  "at " ^ source_to_string req.src ^ "+" ^ Int.to_string req.offset ^ ", " ^ Int.to_string req.word_count ^ " words"
 
 let fr_to_fh (fr : fetch_result) : fetch_hash =
   let ret = Hasher.hash (Option.value_exn (Generic.measure ~measure ~monoid fr.fetched).full).hash in
@@ -43,32 +43,32 @@ let fr_to_fh (fr : fetch_result) : fetch_hash =
 let get_value (state : state) (store : store option) (src : source) : value =
   match src with
   | E i ->
-      assert (i < Dynarray.length state.e);
-      Dynarray.get state.e i
+      assert (i < Stdlib.Dynarray.length state.e);
+      Stdlib.Dynarray.get state.e i
   | S i ->
-      assert (i < Dynarray.length (Option.value_exn store));
-      Dynarray.get (Option.value_exn store) i
+      assert (i < Stdlib.Dynarray.length (Option.value_exn store));
+      Stdlib.Dynarray.get (Option.value_exn store) i
   | K -> state.k
 
 (* Where does the references in tstate point to? 
  * Note that references in Here can only point to S.
  *)
 type tvalue = Here of seq | Lower of seq
-type tstore = tvalue Dynarray.t
-type tstate = { mutable tc : exp; mutable te : tvalue Dynarray.t; mutable tk : tvalue; mutable ts : tstore }
+type tstore = tvalue Stdlib.Dynarray.t
+type tstate = { mutable tc : exp; mutable te : tvalue Stdlib.Dynarray.t; mutable tk : tvalue; mutable ts : tstore }
 
 let set_tvalue (ts : tstate) (src : source) (tv : tvalue) : unit =
-  match src with E i -> Dynarray.set ts.te i tv | S i -> Dynarray.set ts.ts i tv | K -> ts.tk <- tv
+  match src with E i -> Stdlib.Dynarray.set ts.te i tv | S i -> Stdlib.Dynarray.set ts.ts i tv | K -> ts.tk <- tv
 
-let init_store () : store = Dynarray.create ()
+let init_store () : store = Stdlib.Dynarray.create ()
 
 let add_to_store (store : store) (tstore : tstore) (v : value) : reference =
   let d = (Generic.measure ~monoid ~measure v).degree in
   (* if it is 0 it must be empty and we should not be adding *)
   assert (d > 0);
-  let r = { src = S (Dynarray.length store); offset = 0; values_count = d } in
-  Dynarray.add_last store v;
-  Dynarray.add_last tstore (Lower (Generic.singleton (Reference r)));
+  let r = { src = S (Stdlib.Dynarray.length store); offset = 0; values_count = d } in
+  Stdlib.Dynarray.add_last store v;
+  Stdlib.Dynarray.add_last tstore (Lower (Generic.singleton (Reference r)));
   r
 
 let seq_of_fetch_result (fr : fetch_result) : seq =
@@ -96,7 +96,7 @@ let fetch_value (state : state) (store : store) (tstate : tstate) (req : fetch_r
   let m = Generic.measure ~monoid ~measure words in
   let length = (Option.value_exn m.full).length in
   assert (length <= req.word_count);
-  if (not (Generic.is_empty rest)) && length != req.word_count then
+  if (not (Generic.is_empty rest)) && not (phys_equal length req.word_count) then
     (* We could try to return the shorten fragment and continue.
      * however i doubt it is reusable so we are just cluttering the hashtable*)
     None
@@ -123,7 +123,7 @@ and subst_reference (resolve : source -> seq option) (r : reference) : seq =
 
 let subst_state (x : state) (resolve : source -> seq option) : state =
   let c = x.c in
-  let e = Dynarray.map (fun v -> subst resolve v) x.e in
+  let e = Stdlib.Dynarray.map (fun v -> subst resolve v) x.e in
   let k = subst resolve x.k in
   let sc = x.sc in
   { c; e; k; sc }
@@ -145,7 +145,7 @@ let register_memo_need_unfetched (state : state) (request : fetch_request) (upda
   | Done _ -> failwith "Done canot be fetching"
 
 let single_reference (src : source) : seq = Generic.singleton (Reference { src; offset = 0; values_count = 1 })
-let print_state (cek : state) msg : unit = print_endline (msg ^ ": pc=" ^ string_of_int cek.c.pc)
+let print_state (cek : state) msg : unit = Stdio.print_endline (msg ^ ": pc=" ^ Int.to_string cek.c.pc)
 
 (* Each execution cycle in ant consist of 3 steps:
  * - Locating a node from the memo tree, which consist of an updatable intermediate state.
@@ -157,21 +157,21 @@ let print_state (cek : state) msg : unit = print_endline (msg ^ ": pc=" ^ string
 let tstate_from_state (s : state) : tstate =
   {
     tc = s.c;
-    te = Dynarray.mapi (fun i _ -> Lower (single_reference (E i))) s.e;
+    te = Stdlib.Dynarray.mapi (fun i _ -> Lower (single_reference (E i))) s.e;
     tk = Lower (single_reference K);
-    ts = Dynarray.create ();
+    ts = Stdlib.Dynarray.create ();
   }
 
-let dyn_array_update (f : 'a -> 'a) (arr : 'a Dynarray.t) : unit =
-  let len = Dynarray.length arr in
+let dyn_array_update (f : 'a -> 'a) (arr : 'a Stdlib.Dynarray.t) : unit =
+  let len = Stdlib.Dynarray.length arr in
   for i = 0 to len - 1 do
-    Dynarray.set arr i (f (Dynarray.get arr i))
+    Stdlib.Dynarray.set arr i (f (Stdlib.Dynarray.get arr i))
   done
 
-let dyn_array_rev_update (f : 'a -> 'a) (arr : 'a Dynarray.t) : unit =
-  let len = Dynarray.length arr in
+let dyn_array_rev_update (f : 'a -> 'a) (arr : 'a Stdlib.Dynarray.t) : unit =
+  let len = Stdlib.Dynarray.length arr in
   for i = len - 1 downto 0 do
-    Dynarray.set arr i (f (Dynarray.get arr i))
+    Stdlib.Dynarray.set arr i (f (Stdlib.Dynarray.get arr i))
   done
 
 let unHere (Here seq) = seq
@@ -181,13 +181,13 @@ let state_from_tstate (s : state) (t : tstate) : state =
   dyn_array_rev_update
     (fun v ->
       match v with
-      | Here v -> Lower (subst (fun (S i) -> Option.some $ unLower (Dynarray.get t.ts i)) v)
+      | Here v -> Lower (subst (fun (S i) -> Option.some $ unLower (Stdlib.Dynarray.get t.ts i)) v)
       | Lower v -> Lower v)
     t.ts;
   let transform (tv : tvalue) : value =
-    match tv with Here v -> subst (fun (S i) -> Option.some $ unLower (Dynarray.get t.ts i)) v | Lower v -> v
+    match tv with Here v -> subst (fun (S i) -> Option.some $ unLower (Stdlib.Dynarray.get t.ts i)) v | Lower v -> v
   in
-  let ret = { c = t.tc; e = Dynarray.map transform t.te; k = transform t.tk; sc = 0 } in
+  let ret = { c = t.tc; e = Stdlib.Dynarray.map transform t.te; k = transform t.tk; sc = 0 } in
   log ("state_from_tstate " ^ string_of_cek ret);
   ret
 
@@ -197,7 +197,7 @@ let rec val_refs_aux (x : value) (rs : reference list) : reference list =
   match Generic.front rhs ~monoid ~measure with None -> rs | Some (rest, Reference r) -> val_refs_aux rest (r :: rs)
 
 let state_refs (state : state) : reference list =
-  let e = Dynarray.fold_left (fun rs x -> val_refs_aux x rs) [] state.e in
+  let e = Stdlib.Dynarray.fold_left (fun rs x -> val_refs_aux x rs) [] state.e in
   let k = val_refs_aux state.k e in
   k
 
@@ -207,7 +207,7 @@ let rec climb_aux (state : state) (store : store) (tstate : tstate) (fetch_value
     (climb_done : state -> 'a) (climb_halfway : state -> update -> 'a) (update : update) (depth : int) : 'a =
   match !update with
   | Halfway s ->
-      log ("climb_halfway depth: " ^ string_of_int depth);
+      log ("climb_halfway depth: " ^ Int.to_string depth);
       climb_halfway (copy_state s) update
   | Done d -> climb_done (copy_state d)
   (* This is the only place where tstate is used. Maybe just remove the idea of blackhole? *)
@@ -219,7 +219,7 @@ let rec climb_aux (state : state) (store : store) (tstate : tstate) (fetch_value
       | Some fr -> (
           match Hashtbl.find next.lookup (fr_to_fh fr) with
           | None ->
-              log ("adding new log at depth: " ^ string_of_int depth);
+              log ("adding new log at depth: " ^ Int.to_string depth);
               let bh = ref BlackHole in
               Hashtbl.add_exn next.lookup ~key:(fr_to_fh fr) ~data:bh;
               log ("current: " ^ string_of_cek (copy_state current));
@@ -269,10 +269,10 @@ let update (state : state) (store : store) (memo : memo_t) (update : update) : s
       memo
   in
   assert (sc_before <= state.sc);
-  if sc_before == state.sc then (
-    log ("before step taken:sc=" ^ string_of_int state.sc ^ ", pc=" ^ string_of_int state.c.pc);
+  if phys_equal sc_before state.sc then (
+    log ("before step taken:sc=" ^ Int.to_string state.sc ^ ", pc=" ^ Int.to_string state.c.pc);
     ignore (state.c.step state store update);
-    log ("after step taken:sc=" ^ string_of_int state.sc ^ ", pc=" ^ string_of_int state.c.pc));
+    log ("after step taken:sc=" ^ Int.to_string state.sc ^ ", pc=" ^ Int.to_string state.c.pc));
   if sc_before < state.sc then improve update (Halfway (Shared state));
   state
 
@@ -283,7 +283,7 @@ let ant_step (x : state) (m : memo_t) : state =
   fast_forward_to x store y
 
 let pow2_int x = 1 lsl x
-let get_word_count (store : store) : int = pow2_int $ Dynarray.length store
+let get_word_count (store : store) : int = pow2_int $ Stdlib.Dynarray.length store
 
 let rec resolve_seq (state : state) (store : store) (x : seq) (update : update) : (Word.t * seq) option =
   let m = Generic.measure ~monoid ~measure x in
@@ -308,14 +308,14 @@ let rec resolve (state : state) (store : store) (src : source) (update : update)
   assert ((Generic.measure ~monoid ~measure v).max_degree = 1);
   resolve_seq state store v update
 
-let pc_map : exp Dynarray.t = Dynarray.create ()
+let pc_map : exp Stdlib.Dynarray.t = Stdlib.Dynarray.create ()
 
 let add_exp (f : state -> store -> update -> state) (pc_ : int) : unit =
-  let pc = Dynarray.length pc_map in
-  assert (pc == pc_);
-  Dynarray.add_last pc_map { step = f; pc }
+  let pc = Stdlib.Dynarray.length pc_map in
+  assert (phys_equal pc pc_);
+  Stdlib.Dynarray.add_last pc_map { step = f; pc }
 
-let pc_to_exp (pc : int) : exp = Dynarray.get pc_map pc
+let pc_to_exp (pc : int) : exp = Stdlib.Dynarray.get pc_map pc
 let from_constructor (ctag : int) : seq = Generic.singleton (Word (Word.make Word.constructor_tag ctag))
 let from_int (i : int) : seq = Generic.singleton (Word (Word.make Word.int_tag i))
 
@@ -341,18 +341,18 @@ let list_match (x : seq) : (Word.t * seq) option =
 let push_env (s : state) (v : value) : unit =
   assert ((Generic.measure ~monoid ~measure v).degree = 1);
   assert ((Generic.measure ~monoid ~measure v).max_degree = 1);
-  Dynarray.add_last s.e v
+  Stdlib.Dynarray.add_last s.e v
 
 let pop_env (s : state) : value =
-  let v = Dynarray.pop_last s.e in
+  let v = Stdlib.Dynarray.pop_last s.e in
   assert ((Generic.measure ~monoid ~measure v).degree = 1);
   assert ((Generic.measure ~monoid ~measure v).max_degree = 1);
   v
 
 let env_call (s : state) (keep : int list) (nargs : int) : seq =
-  let l = Dynarray.length s.e in
-  let ret = appends (List.map keep (fun i -> Dynarray.get s.e i)) in
-  s.e <- Dynarray.init nargs (fun i -> Dynarray.get s.e (l - nargs + i));
+  let l = Stdlib.Dynarray.length s.e in
+  let ret = appends (List.map keep (fun i -> Stdlib.Dynarray.get s.e i)) in
+  s.e <- Stdlib.Dynarray.init nargs (fun i -> Stdlib.Dynarray.get s.e (l - nargs + i));
   assert ((Generic.measure ~monoid ~measure ret).degree = List.length keep);
   assert ((Generic.measure ~monoid ~measure ret).max_degree = List.length keep);
   ret
@@ -360,10 +360,10 @@ let env_call (s : state) (keep : int list) (nargs : int) : seq =
 let restore_env (s : state) (n : int) (seqs : seq) : unit =
   let splitted = List.rev (List.tl_exn (List.rev (splits seqs))) in
   assert (List.length splitted = n);
-  assert (Dynarray.length s.e = 1);
-  let last = Dynarray.get_last s.e in
-  s.e <- Dynarray.of_list splitted;
-  Dynarray.add_last s.e last
+  assert (Stdlib.Dynarray.length s.e = 1);
+  let last = Stdlib.Dynarray.get_last s.e in
+  s.e <- Stdlib.Dynarray.of_list splitted;
+  Stdlib.Dynarray.add_last s.e last
 
 let get_next_cont (seqs : seq) : seq =
   let splitted = splits seqs in
@@ -374,44 +374,45 @@ let stepped (x : state) =
   x
 
 let return_n (s : state) (n : int) (return_exp : exp) (_ : store) (_ : update) : state =
-  assert (Dynarray.length s.e = n);
-  s.e <- Dynarray.of_list [ Dynarray.get_last s.e ];
+  assert (Stdlib.Dynarray.length s.e = n);
+  s.e <- Stdlib.Dynarray.of_list [ Stdlib.Dynarray.get_last s.e ];
   s.c <- return_exp;
   stepped s
 
 let drop_n (s : state) (e : int) (n : int) (return_exp : exp) : state =
-  assert (Dynarray.length s.e = e);
-  let last = Dynarray.pop_last s.e in
+  assert (Stdlib.Dynarray.length s.e = e);
+  let last = Stdlib.Dynarray.pop_last s.e in
   let rec loop x =
     if x = n then ()
     else (
-      Dynarray.remove_last s.e;
+      Stdlib.Dynarray.remove_last s.e;
       loop (x + 1))
   in
   loop 0;
-  Dynarray.add_last s.e last;
+  Stdlib.Dynarray.add_last s.e last;
   s.c <- return_exp;
   stepped s
 
 let assert_env_length (s : state) (e : int) : unit =
-  let l = Dynarray.length s.e in
-  if l <> e then print_endline ("env_length should be " ^ string_of_int e ^ " but is " ^ string_of_int l);
+  let l = Stdlib.Dynarray.length s.e in
+  if l <> e then Stdio.print_endline ("env_length should be " ^ Int.to_string e ^ " but is " ^ Int.to_string l);
   assert (l = e)
 
 let exec_done (d : state) (u : update) : state =
   improve u (Done (Shared d));
   raise (DoneExec d)
 
-let exec_cek (c : exp) (e : words Dynarray.t) (k : words) (m : memo_t) : words =
+let exec_cek (c : exp) (e : words Stdlib.Dynarray.t) (k : words) (m : memo_t) : words =
   let state = { c; e; k; sc = 0 } in
   let i = ref 0 in
   let rec exec state =
-    log ("step " ^ string_of_int !i ^ ": " ^ string_of_int state.sc);
+    log ("step " ^ Int.to_string !i ^ ": " ^ Int.to_string state.sc);
     i := !i + 1;
     exec (ant_step state m)
   in
   try exec state
   with DoneExec state ->
-    assert (Dynarray.length state.e = 1);
-    print_endline ("took " ^ string_of_int !i ^ " step, but without memo take " ^ string_of_int state.sc ^ " step.");
-    Dynarray.get_last state.e
+    assert (Stdlib.Dynarray.length state.e = 1);
+    Stdio.print_endline
+      ("took " ^ Int.to_string !i ^ " step, but without memo take " ^ Int.to_string state.sc ^ " step.");
+    Stdlib.Dynarray.get_last state.e
